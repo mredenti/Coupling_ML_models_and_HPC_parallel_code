@@ -739,7 +739,6 @@ main (int argc, char **argv)
 
   // -------- build the Coupling object collectively ---------------------
   mlhpc::CouplingConfig  cfg;
-  cfg.inference_pool_size   = cli.inference_pool;
   cfg.ml_server_nodes       = cli.ml_server_nodes;
   cfg.max_batch_particles   = cli.max_batch_particles;
   cfg.max_inflight_requests = cli.max_inflight;
