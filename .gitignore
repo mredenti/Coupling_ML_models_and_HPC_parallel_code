@@ -1,1 +1,6 @@
+# Build artifacts
 build/
+
+# Slurm job logs
+*.err
+*.out
