@@ -1,0 +1,233 @@
+{
+  "version": 2,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "ENABLE_TESTING": true,
+        "MLHPC_ENABLE_OPENMP": true,
+        "MLHPC_FEATURE_DOUBLE": false,
+        "MLHPC_ID_32BIT": false,
+        "MLHPC_BACKEND": "DUMMY",
+        "MLHPC_DOWNLOAD_ONNX": false,
+        "MLHPC_ONNX_ROOT": "",
+        "MLHPC_ONNX_MODEL": "",
+        "MLHPC_MPI_TEST_RANKS": "4"
+      }
+    },
+    {
+      "name": "case-a",
+      "inherits": "base",
+      "cacheVariables": {
+        "MLHPC_CASE": "A"
+      }
+    },
+    {
+      "name": "case-b",
+      "inherits": "base",
+      "cacheVariables": {
+        "MLHPC_CASE": "B"
+      }
+    },
+    {
+      "name": "case-a-onnx",
+      "inherits": "case-a",
+      "cacheVariables": {
+        "MLHPC_BACKEND": "ONNX",
+        "MLHPC_DOWNLOAD_ONNX": true,
+        "MLHPC_ONNX_MODEL": "$env{MLHPC_ONNX_MODEL}"
+      }
+    },
+    {
+      "name": "case-b-onnx",
+      "inherits": "case-b",
+      "cacheVariables": {
+        "MLHPC_BACKEND": "ONNX",
+        "MLHPC_DOWNLOAD_ONNX": true,
+        "MLHPC_ONNX_MODEL": "$env{MLHPC_ONNX_MODEL}"
+      }
+    },
+    {
+      "name": "case-a-no-tests",
+      "inherits": "case-a",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ENABLE_TESTING": false
+      }
+    },
+    {
+      "name": "case-b-no-tests",
+      "inherits": "case-b",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ENABLE_TESTING": false
+      }
+    },
+    {
+      "name": "case-a-onnx-no-tests",
+      "inherits": "case-a-onnx",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ENABLE_TESTING": false
+      }
+    },
+    {
+      "name": "case-b-onnx-no-tests",
+      "inherits": "case-b-onnx",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ENABLE_TESTING": false
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "base-build",
+      "hidden": true,
+      "jobs": 4
+    },
+    {
+      "name": "case-a",
+      "inherits": "base-build",
+      "configurePreset": "case-a"
+    },
+    {
+      "name": "case-b",
+      "inherits": "base-build",
+      "configurePreset": "case-b"
+    },
+    {
+      "name": "case-a-onnx",
+      "inherits": "base-build",
+      "configurePreset": "case-a-onnx"
+    },
+    {
+      "name": "case-b-onnx",
+      "inherits": "base-build",
+      "configurePreset": "case-b-onnx"
+    },
+    {
+      "name": "case-a-no-tests",
+      "inherits": "base-build",
+      "configurePreset": "case-a-no-tests"
+    },
+    {
+      "name": "case-b-no-tests",
+      "inherits": "base-build",
+      "configurePreset": "case-b-no-tests"
+    },
+    {
+      "name": "case-a-onnx-no-tests",
+      "inherits": "base-build",
+      "configurePreset": "case-a-onnx-no-tests"
+    },
+    {
+      "name": "case-b-onnx-no-tests",
+      "inherits": "base-build",
+      "configurePreset": "case-b-onnx-no-tests"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "base-test",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "case-a-unit",
+      "inherits": "base-test",
+      "configurePreset": "case-a",
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      }
+    },
+    {
+      "name": "case-a-mpi",
+      "inherits": "base-test",
+      "configurePreset": "case-a",
+      "filter": {
+        "include": {
+          "label": "^mpi$"
+        }
+      }
+    },
+    {
+      "name": "case-b-unit",
+      "inherits": "base-test",
+      "configurePreset": "case-b",
+      "filter": {
+        "include": {
+          "label": "^unit$"
+        }
+      }
+    },
+    {
+      "name": "case-b-mpi",
+      "inherits": "base-test",
+      "configurePreset": "case-b",
+      "filter": {
+        "include": {
+          "label": "^mpi$"
+        }
+      }
+    },
+    {
+      "name": "case-a-onnx",
+      "inherits": "base-test",
+      "configurePreset": "case-a-onnx",
+      "filter": {
+        "include": {
+          "label": "^onnx$"
+        }
+      }
+    },
+    {
+      "name": "case-b-onnx",
+      "inherits": "base-test",
+      "configurePreset": "case-b-onnx",
+      "filter": {
+        "include": {
+          "label": "^onnx$"
+        }
+      }
+    },
+    {
+      "name": "case-a-onnx-mpi",
+      "inherits": "base-test",
+      "configurePreset": "case-a-onnx",
+      "filter": {
+        "include": {
+          "name": "^(test_coupling_A|test_backend_smoke)$"
+        }
+      }
+    },
+    {
+      "name": "case-b-onnx-mpi",
+      "inherits": "base-test",
+      "configurePreset": "case-b-onnx",
+      "filter": {
+        "include": {
+          "name": "^(test_coupling_B|test_backend_smoke)$"
+        }
+      }
+    }
+  ]
+}
