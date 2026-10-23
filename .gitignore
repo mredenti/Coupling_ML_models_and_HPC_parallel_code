@@ -4,3 +4,8 @@ build/
 # Slurm job logs
 *.err
 *.out
+
+# Python environment and caches
+/.venv/
+__pycache__/
+*.py[cod]
