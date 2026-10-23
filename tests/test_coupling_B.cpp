@@ -21,8 +21,9 @@
 //    3. On physics ranks: coupling->evaluate_async() round-trips a
 //       deterministic batch and produces values bit-identical to a
 //       direct DummyBackend::batch_inference() call on the same batch.
+//       Only inference ranks construct the selected backend.
 //    4. On inference ranks: serve() processes exactly
-//       (own_node_size - 1) * 3 chunks (3 chunks because
+//       (own_node_size - 1) * 6 chunks (two batches, three chunks each because
 //       max_batch_particles=3 splits the 8-particle batch into three
 //       chunks of size 3, 3, 2).
 //    5. shutdown() is idempotent.
@@ -33,6 +34,7 @@
 
 #include "mlhpc/coupling.hpp"
 #include "mlhpc/inference.hpp"
+#include "mlhpc/inference_factory.hpp"
 #include "mlhpc/particle_batch.hpp"
 #include "mlhpc/types.hpp"
 
@@ -43,6 +45,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace
@@ -93,7 +97,15 @@ main (int argc, char **argv)
   MPI_Comm_size (MPI_COMM_WORLD, &size);
 
 #if defined(MLHPC_CASE_B) && MLHPC_CASE_B
+  std::unique_ptr<mlhpc::Coupling> coupling;
+  std::unique_ptr<mlhpc::InferenceBackend> backend;
+  try
   {
+    if (argc > 2)
+      {
+        throw std::invalid_argument ("Usage: test_coupling_B [model.onnx]");
+      }
+
     if (size < 2)
       {
         if (rank == 0)
@@ -125,8 +137,7 @@ main (int argc, char **argv)
     mlhpc::CouplingConfig  cfg;
     cfg.max_batch_particles   = 3;
     cfg.max_inflight_requests = 2;
-    std::unique_ptr<mlhpc::Coupling>  coupling =
-        mlhpc::make_coupling (MPI_COMM_WORLD, cfg);
+    coupling = mlhpc::make_coupling (MPI_COMM_WORLD, cfg);
 
     // ---------------- (1)/(2) role checks ----------------------------
     expect (coupling->is_physics ()   == !i_am_inference,
@@ -134,7 +145,22 @@ main (int argc, char **argv)
     expect (coupling->is_inference () ==  i_am_inference,
             "is_inference matches expected role");
 
-    mlhpc::DummyBackend  backend;
+    if (coupling->is_inference ())
+      {
+        backend = mlhpc::make_backend (argc == 2 ? argv[1] : "");
+      }
+    expect ((backend != nullptr) == i_am_inference,
+            "only inference ranks own a selected backend");
+
+    const int local_counts[2] = { backend ? 1 : 0, i_am_inference ? 1 : 0 };
+    int counts[2] = {};
+    MPI_Allreduce (local_counts, counts, 2, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    expect (counts[0] == counts[1], "backend count matches inference rank count");
+    if (rank == 0)
+      {
+        std::printf ("test_coupling_B: backend=%s, instances=%d\n",
+                     mlhpc::compiled_backend_label (), counts[0]);
+      }
 
     if (i_am_inference)
       {
@@ -142,10 +168,10 @@ main (int argc, char **argv)
         expect (coupling->physics_comm () == MPI_COMM_NULL,
                 "inference rank: physics_comm is MPI_COMM_NULL");
 
-        coupling->serve (backend);
+        coupling->serve (*backend);
 
         const mlhpc::Timings  t = coupling->timings ();
-        expect (t.n_calls == static_cast<std::size_t> (expected * 3),
+        expect (t.n_calls == static_cast<std::size_t> (expected * 6),
                 "inference rank: n_calls == expected physics chunks");
         expect (t.kernel >= 0.0, "inference rank: kernel >= 0");
         expect (t.send   >= 0.0, "inference rank: send   >= 0");
@@ -168,16 +194,18 @@ main (int argc, char **argv)
         for (std::size_t i = 0; i < n; ++i)
           {
             batch.rho [i] = static_cast<mlhpc::Real> (1 + phys_rank * 16 + i);
-            batch.u   [i] = static_cast<mlhpc::Real> (4 * (1 + phys_rank * 16 + i));
+            batch.u   [i] = static_cast<mlhpc::Real>
+                (4 + (i * 7 + static_cast<std::size_t> (phys_rank) * 3) % 17);
           }
 
         // ---------------- (3) reference (direct) vs B (wire) --------
         std::vector<mlhpc::Real>  out_direct (n);
-        backend.batch_inference (batch, out_direct.data ());
+        const mlhpc::DummyBackend reference;
+        reference.batch_inference (batch, out_direct.data ());
 
         std::vector<mlhpc::Real>  out_via    (n);
         const mlhpc::CouplingRequest  request =
-            coupling->evaluate_async (batch, out_via.data (), backend);
+            coupling->evaluate_async (batch, out_via.data ());
         while (!coupling->test (request))
           {
             coupling->progress ();
@@ -198,6 +226,15 @@ main (int argc, char **argv)
         expect (t.wait   >= 0.0,  "physics rank: wait   >= 0");
         expect (t.kernel == 0.0,
                 "physics rank: kernel == 0 (no local kernel in case B)");
+
+        out_via.assign (n, static_cast<mlhpc::Real> (-1));
+        coupling->evaluate (batch, out_via.data ());
+        for (std::size_t i = 0; i < n; ++i)
+          {
+            expect_eq_real ("blocking Case B output", out_via[i], out_direct[i]);
+          }
+        expect (coupling->timings ().n_calls == 6,
+                "blocking evaluate completes another three remote chunks");
       }
 
     // ---------------- (5) shutdown is idempotent ---------------------
@@ -208,6 +245,15 @@ main (int argc, char **argv)
     expect (std::strcmp (mlhpc::compiled_case_label (), "B") == 0,
             "compiled_case_label() == \"B\"");
   }
+  catch (const std::exception &error)
+    {
+      std::fprintf (stderr, "[rank %d] test_coupling_B: %s\n",
+                    rank, error.what ());
+      MPI_Abort (MPI_COMM_WORLD, 1);
+      return EXIT_FAILURE;
+    }
+  backend.reset ();
+  coupling.reset ();
 #else
   if (rank == 0)
     {

@@ -33,6 +33,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
 
 namespace mlhpc
 {
@@ -109,10 +110,15 @@ public:
   CouplingRequest
   evaluate_async (const ParticleBatch       &batch,
                   Real *__restrict           out,
-                  const InferenceBackend    &backend) const override
+                  const InferenceBackend    *backend) const override
   {
+    if (backend == nullptr)
+      {
+        throw std::logic_error ("CouplingA::evaluate_async requires a local backend");
+      }
+
     const double  t0 = MPI_Wtime ();
-    backend.batch_inference (batch, out);
+    backend->batch_inference (batch, out);
     const double  t1 = MPI_Wtime ();
 
     m_timings.kernel  += (t1 - t0);
@@ -166,7 +172,7 @@ public:
   void
   evaluate (const ParticleBatch       &batch,
             Real *__restrict           out,
-            const InferenceBackend    &backend) const override
+            const InferenceBackend    *backend) const override
   {
     const CouplingRequest  request = evaluate_async (batch, out, backend);
     wait (request);

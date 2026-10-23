@@ -38,6 +38,7 @@
 //                             pseudo-random active particle subsets.
 //      --active-seed=N        Seed for deterministic active-particle
 //                             selection in benchmark modes.
+//      --model=PATH           Model loaded by inference ranks in ONNX builds.
 //
 //  The orchestration code below speaks only through the Coupling
 //  abstraction.  Anything case-specific (sub-communicators, query/
@@ -50,6 +51,7 @@
 #include "mlhpc/format2_distributor.hpp"
 #include "mlhpc/group_distribution.hpp"
 #include "mlhpc/inference.hpp"
+#include "mlhpc/inference_factory.hpp"
 #include "mlhpc/io_gadget2.hpp"
 #include "mlhpc/particle_batch.hpp"
 #include "mlhpc/types.hpp"
@@ -78,6 +80,7 @@ struct CLI
 {
   bool        want_snapshot  = false;   // true iff a positional path was given
   std::string snapshot_path;
+  std::string model_path;
   int         inference_pool      = 1;   // CouplingConfig.inference_pool_size
   int         ml_server_nodes     = 0;   // CouplingConfig.ml_server_nodes
   std::size_t max_batch_particles = 0;   // CouplingConfig.max_batch_particles
@@ -223,6 +226,16 @@ parse_cli (int       argc,
               return false;
             }
           out.active_seed = static_cast<unsigned int> (n);
+        }
+      else if (std::strncmp (arg, "--model=", 8) == 0)
+        {
+          out.model_path = arg + 8;
+          if (out.model_path.empty ())
+            {
+              report_bad_flag_value (rank, "--model", arg + 8,
+                                    "a non-empty model path");
+              return false;
+            }
         }
       else if (arg [0] == '-')
         {
@@ -465,7 +478,7 @@ int
 physics_pipeline (const std::string                 &path,
                   const CLI                         &cli,
                   const mlhpc::Coupling             &coupling,
-                  const mlhpc::InferenceBackend     &backend)
+                  const mlhpc::InferenceBackend     *backend)
 {
   const MPI_Comm  pcomm = coupling.physics_comm ();
   int             prank = 0;
@@ -677,13 +690,15 @@ physics_pipeline (const std::string                 &path,
                        static_cast<double> (u_max));
           if (active_total_all > 0)
             {
-              std::printf ("  dummy cooling-rate output : [%.6g, %.6g]\n",
+              std::printf ("  cooling-rate output (%s) : [%.6g, %.6g]\n",
+                           mlhpc::compiled_backend_label (),
                            static_cast<double> (cr_min),
                            static_cast<double> (cr_max));
             }
           else
             {
-              std::printf ("  dummy cooling-rate output : no active particles\n");
+              std::printf ("  cooling-rate output (%s) : no active particles\n",
+                           mlhpc::compiled_backend_label ());
             }
           std::printf ("  active cooling evaluations : %zu over %zu step(s)\n",
                        active_total_all, cli.nsteps);
@@ -755,31 +770,52 @@ main (int argc, char **argv)
   // (both are no-ops on inference-only ranks), then unconditionally
   // call serve() on inference-only ranks, then shutdown() everywhere.
   int                  rc = EXIT_SUCCESS;
-  mlhpc::DummyBackend  backend;
+  std::unique_ptr<mlhpc::InferenceBackend> backend;
 
-  if (!cli.want_snapshot)
+  try
     {
-      rc = smoke_test (world_rank, world_size, provided, *coupling);
+      if (coupling->is_inference ())
+        {
+          backend = mlhpc::make_backend (cli.model_path);
+        }
+
+      const int local_backend = backend ? 1 : 0;
+      int backend_count = 0;
+      MPI_Allreduce (&local_backend, &backend_count, 1, MPI_INT, MPI_SUM,
+                     MPI_COMM_WORLD);
+      if (world_rank == 0)
+        {
+          std::printf ("mlhpc: inference backend = %s; backend instances = %d\n",
+                       mlhpc::compiled_backend_label (), backend_count);
+          std::fflush (stdout);
+        }
+
+      if (!cli.want_snapshot)
+        {
+          rc = smoke_test (world_rank, world_size, provided, *coupling);
+        }
+      else if (coupling->is_physics ())
+        {
+          rc = physics_pipeline (cli.snapshot_path, cli, *coupling, backend.get ());
+        }
+
+      if (coupling->is_inference () && !coupling->is_physics ())
+        {
+          coupling->serve (*backend);
+        }
+
+      coupling->shutdown ();
     }
-  else if (coupling->is_physics ())
+  catch (const std::exception &error)
     {
-      rc = physics_pipeline (cli.snapshot_path, cli, *coupling, backend);
+      std::fprintf (stderr, "[rank %d] mlhpc: %s\n",
+                    world_rank, error.what ());
+      MPI_Abort (MPI_COMM_WORLD, 5);
+      return EXIT_FAILURE;
     }
 
-  // Inference-only ranks (cases B and C) block here until shutdown
-  // sentinels arrive.  In case A this branch is never taken because
-  // every rank is also a physics rank.
-  if (coupling->is_inference () && !coupling->is_physics ())
-    {
-      coupling->serve (backend);
-    }
-
-  // Drain the pool.  Per-rank one-shot signal; no-op for case A,
-  // sends sentinels for B/C, idempotent.
-  coupling->shutdown ();
-
-  // Release the Coupling before MPI_Finalize so its destructor
-  // can MPI_Comm_free its private sub-communicators.
+  // Drain requests before releasing model resources and MPI communicators.
+  backend.reset ();
   coupling.reset ();
 
   MPI_Finalize ();

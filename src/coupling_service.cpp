@@ -347,7 +347,7 @@ ServiceCoupling::is_inference () const noexcept
 CouplingRequest
 ServiceCoupling::evaluate_async (const ParticleBatch       &batch,
                                  Real *__restrict           out,
-                                 const InferenceBackend    &/*backend*/) const
+                                 const InferenceBackend    */*backend*/) const
 {
   if (m_is_inference)
     {
@@ -387,7 +387,7 @@ ServiceCoupling::wait_all () const
 void
 ServiceCoupling::evaluate (const ParticleBatch       &batch,
                            Real *__restrict           out,
-                           const InferenceBackend    &backend) const
+                           const InferenceBackend    *backend) const
 {
   const CouplingRequest  request = evaluate_async (batch, out, backend);
   wait (request);

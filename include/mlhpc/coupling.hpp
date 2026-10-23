@@ -184,6 +184,8 @@ public:
   //  Preconditions:
   //      - `batch.n == out_length` (caller's responsibility);
   //      - is_physics() == true on the calling rank.
+  //      - Case A requires a non-null backend; service clients need none.
+  //        Omitting the backend in Case A throws std::logic_error.
   //
   //  Postconditions:
   //      - out[0 .. batch.n) is filled;
@@ -197,8 +199,16 @@ public:
   virtual CouplingRequest
   evaluate_async (const ParticleBatch       &batch,    // in : copied/packed before return
                   Real *__restrict           out,      // out: must live until wait() succeeds
-                  const InferenceBackend    &backend   // in : used locally by case A
+                  const InferenceBackend    *backend = nullptr // required by A; unused by B clients
                  ) const = 0;
+
+  CouplingRequest
+  evaluate_async (const ParticleBatch       &batch,
+                  Real *__restrict           out,
+                  const InferenceBackend    &backend) const
+  {
+    return evaluate_async (batch, out, &backend);
+  }
 
   // -------------------------------------------------------------------
   //  progress -- advance any non-blocking transport work owned by this
@@ -232,8 +242,16 @@ public:
   virtual void
   evaluate (const ParticleBatch       &batch,    // in : SoA particles (length batch.n)
             Real *__restrict           out,      // out: cooling rate per particle
-            const InferenceBackend    &backend   // in : plug-in model (must outlive this call)
+            const InferenceBackend    *backend = nullptr // required by A; unused by B clients
            ) const = 0;
+
+  void
+  evaluate (const ParticleBatch       &batch,
+            Real *__restrict           out,
+            const InferenceBackend    &backend) const
+  {
+    evaluate (batch, out, &backend);
+  }
 
   // -------------------------------------------------------------------
   //  serve -- inference-rank entry point.

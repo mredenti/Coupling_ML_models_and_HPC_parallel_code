@@ -52,7 +52,7 @@ public:
   CouplingRequest
   evaluate_async (const ParticleBatch       &batch,
                   Real *__restrict           out,
-                  const InferenceBackend    &backend) const override;
+                  const InferenceBackend    *backend) const override;
 
   void
   progress () const override;
@@ -69,7 +69,7 @@ public:
   void
   evaluate (const ParticleBatch       &batch,
             Real *__restrict           out,
-            const InferenceBackend    &backend) const override;
+            const InferenceBackend    *backend) const override;
 
   void
   serve (const InferenceBackend &backend) const override;

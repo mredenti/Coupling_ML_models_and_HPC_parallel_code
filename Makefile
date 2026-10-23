@@ -59,6 +59,7 @@ INC_FLAGS     := -Iinclude
 # strict warning flags with thousands of old-style-cast diagnostics
 # inside the MPI library headers themselves).
 DEFS          := -DMLHPC_CASE_$(CASE)=1 \
+                 -DMLHPC_BACKEND_ONNX=0 \
                  -DOMPI_SKIP_MPICXX=1 -DMPICH_SKIP_MPICXX=1
 ifeq ($(ID_32BIT),1)
   DEFS        += -DMLHPC_ID_32BIT=1
@@ -99,6 +100,7 @@ LIB_SRCS      := src/io_gadget2.cpp \
                  src/format2_distributor.cpp \
                  src/units.cpp \
                  src/inference_dummy.cpp \
+                 src/inference_factory.cpp \
                  src/coupling_async_mpi.cpp \
                  src/coupling_service.cpp \
                  $(CASE_SRC)
