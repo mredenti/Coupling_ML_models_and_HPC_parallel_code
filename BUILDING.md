@@ -168,6 +168,6 @@ cmake --preset case-b-onnx \
     -DMLHPC_ONNX_ROOT="$PWD/build/case-a-onnx/_deps/onnxruntime-src"
 ```
 
-Keep the referenced runtime directory available while executables use it.
+Keep the referenced runtime directory available while executables use it!
 Reapply these overrides when configuring that preset again, since shared
 presets intentionally specify their default download settings.
